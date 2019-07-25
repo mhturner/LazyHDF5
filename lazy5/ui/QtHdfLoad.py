@@ -14,10 +14,11 @@ HDF5 LOAD DATA QDialog (crikit.vis.subguis.h5loadgui)
     firstSecondThird
 """
 
-
 # Append sys path
 import sys as _sys
 import os as _os
+
+from PyQt5.QtCore import Qt
 
 try:
     # Generic imports for QT-based programs
@@ -30,15 +31,15 @@ else:
     HAS_PYQT5 = True
 from lazy5.ui.qt_HdfLoad import Ui_Dialog
 
-from lazy5.inspect import get_hierarchy, get_attrs_dset
+from lazy5.inspect import get_hierarchy, get_attrs_dset, get_attrs_group
 from lazy5.nonh5utils import filterlist
+from lazy5 import alter
 
 class HdfLoad(_QDialog): ### EDIT ###
     """ GUI Loader Class for H5 Files """
 
     # Default configuration
-    config = {'only_show_grp_w_dset': True,  # Only show groups with datasets
-              'attr_description': 'Memo',  # Description attribute key (optional)
+    config = {'only_show_grp_w_dset': False,  # Only show groups with datasets
               'excl_filtering' : True  # Filtering is exclusive (filters are AND'd)
              }
 
@@ -48,6 +49,8 @@ class HdfLoad(_QDialog): ### EDIT ###
         super(HdfLoad, self).__init__(parent)
         self.ui = Ui_Dialog()  # pylint: disable=C0103
         self.ui.setupUi(self)
+        
+        self.ui.tableAttributes.itemChanged.connect(self.update_attrs_to_file)
 
         self.path = None
         self.filename = None
@@ -121,7 +124,7 @@ class HdfLoad(_QDialog): ### EDIT ###
             title_file='{}: Select a file...'.format(title)
 
         if _os.path.isdir(pth):  # No file provided, use QFileDialog; # pragma: no cover
-            filetype_options = 'HDF5 Files (*.h5 *.hdf);;All Files (*.*)'
+            filetype_options = 'HDF5 Files (*.h5 *.hdf *.hdf5);;All Files (*.*)'
             full_pth_fname, _ = _QFileDialog.getOpenFileName(self, title_file, pth,
                                                              filetype_options)
         elif _os.path.isfile(pth):  # Is a valid file
@@ -150,32 +153,51 @@ class HdfLoad(_QDialog): ### EDIT ###
 
     def dataGroupChange(self):  # Qt-related pylint: disable=C0103
         """ Action : ComboBox containing Groups with DataSets has changed"""
-
-        #self.dsetlist = QListWidget(self.verticalLayoutWidget)
         self.ui.listDataSet.clear()
 
         if self.ui.comboBoxGroupSelect.currentText() != '':
             self.ui.listDataSet.addItems(self.group_dset_dict[self.ui.comboBoxGroupSelect.currentText()])
-        #print('Changed')
+            
+            file_name = _os.path.join(self.path, self.filename)
+            group_path = self.ui.comboBoxGroupSelect.currentText()
+            
+            attr_dict = get_attrs_group(file_name, group_path)            
+            self.populate_attrs(attr_dict = attr_dict)
+                    
+        
 
     def populate_attrs(self, attr_dict=None):
-        """ Populate attribute and memo boxes for currently selected dataset """
-
+        """ Populate attribute for currently selected group """
+        self.ui.tableAttributes.blockSignals(True) #block udpate signals for auto-filled forms
         self.ui.tableAttributes.setRowCount(0)
         self.ui.tableAttributes.setColumnCount(2)
         self.ui.tableAttributes.setSortingEnabled(False)
-        self.ui.textDescription.setText('')
 
         if attr_dict:
-            try:
-                self.ui.textDescription.setText(attr_dict[HdfLoad.config['attr_description']])
-            except (KeyError, AttributeError) as error_msg:
-                print('{}\nNo memo at key {}'.format(error_msg, HdfLoad.config['attr_description']))
-
             for num, key in enumerate(attr_dict):
                 self.ui.tableAttributes.insertRow(self.ui.tableAttributes.rowCount())
-                self.ui.tableAttributes.setItem(num, 0, _QTableWidgetItem(key))
-                self.ui.tableAttributes.setItem(num, 1, _QTableWidgetItem(str(attr_dict[key])))
+                key_item = _QTableWidgetItem(key)
+                key_item.setFlags( Qt.ItemIsSelectable | Qt.ItemIsEnabled )
+                self.ui.tableAttributes.setItem(num, 0, key_item)
+                
+                val_item = _QTableWidgetItem(str(attr_dict[key]))
+                val_item.setFlags( Qt.ItemIsSelectable | Qt.ItemIsEditable | Qt.ItemIsEnabled )
+                self.ui.tableAttributes.setItem(num, 1, val_item)
+                
+        self.ui.tableAttributes.blockSignals(False)
+        
+    def update_attrs_to_file(self, item):
+        file_name = _os.path.join(self.path, self.filename)
+        group_path = self.ui.comboBoxGroupSelect.currentText()
+
+        attr_key = self.ui.tableAttributes.item(item.row(),0).text()
+        attr_val = item.text()
+
+        #update attr in file
+        alter.alter_attr(group_path, attr_key, attr_val, file=file_name, pth=None, verbose=False,
+                             check_same_type=False, must_exist=False)
+
+            
 
     def datasetSelected(self):  # Qt-related pylint: disable=C0103
         """ Action : One or more DataSets were selected from the list """

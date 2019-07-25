@@ -147,6 +147,22 @@ def get_hierarchy(file, pth=None, fulldsetpath=False, grp_w_dset=False):
     fof.close_if_file_not_fid()
 
     return grp_dict
+def get_attrs_group(file_path, group_path, pth=None):
+    
+    fp = _fullpath(file_path, pth)
+
+    # Get fid for a file (str or open fid)
+    fof = _FidOrFile(fp)
+    fid = fof.fid
+    group = fid[group_path]
+    
+    attr_dict = {}
+    
+    for at in group.attrs:
+        attr_dict[at] = group.attrs[at]
+    
+    
+    return attr_dict
 
 def get_attrs_dset(file, dset, pth=None, convert_to_str=True, convert_sgl_np_to_num=False):
     """
